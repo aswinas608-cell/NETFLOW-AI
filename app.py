@@ -2,23 +2,39 @@ import os
 import io
 import uuid
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
 from rag_engine import RAGEngine
 
+# ─── App ─────────────────────────────────────────────────────────────────────
+
 app = FastAPI(title="RAG Chatbot API", version="1.0.0")
 
-# Mount static files
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# Required for Hugging Face Spaces iframe embedding and cross-origin JS calls.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── Static files ─────────────────────────────────────────────────────────────
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Global RAG engine instance
+# ─── Global RAG engine ────────────────────────────────────────────────────────
 rag = RAGEngine()
 
-# ─── Request/Response Models ────────────────────────────────────────────────
+# ─── Upload size limit (10 MB) ────────────────────────────────────────────────
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# ─── Request/Response Models ──────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     query: str
@@ -37,11 +53,36 @@ class ValidateRequest(BaseModel):
     groq_api_key: str
     model: str = "llama-3.3-70b-versatile"
 
-# ─── Routes ─────────────────────────────────────────────────────────────────
+# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():
-    return FileResponse("static/index.html")
+    html_path = "static/index.html"
+    if not os.path.exists(html_path):
+        return JSONResponse({"error": "Frontend not found. Please ensure static/index.html exists."}, status_code=500)
+    return FileResponse(html_path)
+
+@app.get("/health")
+async def health():
+    """Health check endpoint — Hugging Face Spaces uses this to verify the container is ready."""
+    doc_count = len(rag.get_documents())
+    return {"status": "ok", "documents_indexed": doc_count}
+
+@app.get("/api/info")
+async def info():
+    """Returns Space metadata useful for the frontend banner."""
+    is_hf = os.environ.get("SPACE_ID") is not None
+    docs = rag.get_documents()
+    return {
+        "is_huggingface": is_hf,
+        "space_id": os.environ.get("SPACE_ID", ""),
+        "documents_indexed": len(docs),
+        "storage_note": (
+            "⚠️ Running on Hugging Face Spaces — uploaded documents are stored in memory "
+            "and will be cleared when the Space restarts."
+            if is_hf else ""
+        ),
+    }
 
 @app.get("/documents")
 async def get_documents():
@@ -74,6 +115,13 @@ async def upload_document(
         )
 
     content_bytes = await file.read()
+
+    # Enforce upload size limit
+    if len(content_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(content_bytes) // 1024} KB). Maximum allowed size is 10 MB."
+        )
 
     # Parse content
     text_content = ""

@@ -213,11 +213,19 @@ async function handleFiles(fileList) {
   fileInput.value = '';
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — matches server limit
+
 async function uploadFile(file) {
   const allowed = ['.txt', '.md', '.pdf'];
   const ext = '.' + file.name.split('.').pop().toLowerCase();
   if (!allowed.includes(ext)) {
     showUploadError(`${file.name}: Unsupported file type.`);
+    return;
+  }
+
+  // Client-side size guard — avoids wasting bandwidth before server rejects it
+  if (file.size > MAX_FILE_BYTES) {
+    showUploadError(`${file.name}: File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`);
     return;
   }
 
@@ -586,10 +594,39 @@ function showToast(msg, type = 'error') {
   setTimeout(() => toast.remove(), 5000);
 }
 
+/* ── HF Spaces Banner ───────────────────────────────────────────────────── */
+async function maybeShowHFBanner() {
+  try {
+    const res = await fetch('/api/info');
+    if (!res.ok) return;
+    const info = await res.json();
+    if (!info.is_huggingface) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'hfBanner';
+    banner.style.cssText = [
+      'position:fixed', 'bottom:0', 'left:0', 'right:0', 'z-index:9000',
+      'background:linear-gradient(90deg,#ff6f00,#ff9800)',
+      'color:#fff', 'font-size:0.78rem', 'padding:8px 16px',
+      'display:flex', 'align-items:center', 'gap:10px',
+      'font-family:Inter,sans-serif', 'box-shadow:0 -2px 12px rgba(0,0,0,0.3)',
+    ].join(';');
+    banner.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>🤗 Running on <strong>Hugging Face Spaces</strong> — uploaded documents are stored in memory and will reset when the Space restarts.</span>
+      <button onclick="this.parentElement.remove()" style="margin-left:auto;background:rgba(255,255,255,0.25);border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.8rem;">✕ Dismiss</button>
+    `;
+    document.body.appendChild(banner);
+  } catch (_) {
+    // /api/info unavailable — silently skip
+  }
+}
+
 /* ── Init ───────────────────────────────────────────────────────────────── */
 async function init() {
   loadSettings();
   await loadDocuments();
+  await maybeShowHFBanner();
 
   // Update badge based on key presence
   if (STATE.groqApiKey) {

@@ -2,12 +2,19 @@ import os
 import json
 import re
 import math
+import threading
 import requests
 from typing import List, Dict, Any, Optional
 
-# File path for index storage
-INDEX_FILE = "data/index.json"
-os.makedirs("data", exist_ok=True)
+# ─── Index file path ──────────────────────────────────────────────────────────
+# On Hugging Face Spaces (free tier) the working directory is NOT persistent.
+# We use /tmp/rag_data when running on HF, or data/ locally.
+# Override with the RAG_INDEX_PATH env var for full control.
+_default_index_dir = "/tmp/rag_data" if os.environ.get("SPACE_ID") else "data"
+_index_dir = os.environ.get("RAG_INDEX_DIR", _default_index_dir)
+os.makedirs(_index_dir, exist_ok=True)
+INDEX_FILE = os.path.join(_index_dir, "index.json")
+
 
 class TFIDFRetriever:
     """A pure Python TF-IDF retriever that requires no external dependencies."""
@@ -23,14 +30,14 @@ class TFIDFRetriever:
     def fit(self, chunks: List[Dict[str, Any]]):
         self.corpus = chunks
         self.doc_count = len(chunks)
-        
+
         # Calculate Doc Frequency (DF) for each term
         df: Dict[str, int] = {}
         for chunk in chunks:
             tokens = set(self._tokenize(chunk["text"]))
             for token in tokens:
                 df[token] = df.get(token, 0) + 1
-                
+
         # Calculate IDF (using smoothing)
         self.idf = {}
         for token, count in df.items():
@@ -39,61 +46,62 @@ class TFIDFRetriever:
     def retrieve(self, query: str, top_k: int = 4) -> List[Dict[str, Any]]:
         if not self.corpus:
             return []
-            
+
         query_tokens = self._tokenize(query)
         if not query_tokens:
             return self.corpus[:top_k]
-            
+
         # Compute query vector
         query_tf: Dict[str, int] = {}
         for token in query_tokens:
             query_tf[token] = query_tf.get(token, 0) + 1
-            
+
         query_vector: Dict[str, float] = {}
         for token, count in query_tf.items():
             if token in self.idf:
                 query_vector[token] = count * self.idf[token]
-                
+
         query_magnitude = math.sqrt(sum(val ** 2 for val in query_vector.values()))
         if query_magnitude == 0:
             return self.corpus[:top_k]
-            
+
         scores = []
         for chunk in self.corpus:
             chunk_tokens = self._tokenize(chunk["text"])
             chunk_tf: Dict[str, int] = {}
             for token in chunk_tokens:
                 chunk_tf[token] = chunk_tf.get(token, 0) + 1
-                
+
             # Cosine similarity calculation (dot product / (mag_q * mag_d))
             dot_product = 0.0
             chunk_mag_squared = 0.0
-            
+
             for token, count in chunk_tf.items():
                 if token in self.idf:
                     val = count * self.idf[token]
                     chunk_mag_squared += val ** 2
                     if token in query_vector:
                         dot_product += query_vector[token] * val
-                        
+
             chunk_magnitude = math.sqrt(chunk_mag_squared)
-            
+
             similarity = 0.0
             if query_magnitude > 0 and chunk_magnitude > 0:
                 similarity = dot_product / (query_magnitude * chunk_magnitude)
-                
+
             scores.append((chunk, similarity))
-            
+
         # Sort by similarity descending
         scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         results = []
         for chunk, sim in scores[:top_k]:
             result = chunk.copy()
             result["score"] = round(sim, 4)
             results.append(result)
-            
+
         return results
+
 
 class EmbeddingsEngine:
     """Manages vector generation via external APIs or falls back to local TF-IDF."""
@@ -120,7 +128,7 @@ class EmbeddingsEngine:
                     return response.json()["data"][0]["embedding"]
             except Exception as e:
                 print(f"OpenAI embedding error: {e}")
-                
+
         elif self.mode == "huggingface":
             try:
                 # Using free Hugging Face API inference
@@ -137,8 +145,9 @@ class EmbeddingsEngine:
                         return res[0]
             except Exception as e:
                 print(f"Hugging Face embedding error: {e}")
-                
+
         return None
+
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     dot_product = sum(x * y for x, y in zip(v1, v2))
@@ -148,9 +157,12 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
         return 0.0
     return dot_product / (mag1 * mag2)
 
+
 class RAGEngine:
     def __init__(self):
         self.index_file = INDEX_FILE
+        # Thread lock — protects index reads/writes under concurrent uvicorn requests
+        self._lock = threading.Lock()
         self.load_index()
 
     def load_index(self):
@@ -164,12 +176,13 @@ class RAGEngine:
         else:
             self.index = {"documents": {}, "chunks": []}
             self.save_index()
-            
+
         self.tfidf_retriever = TFIDFRetriever()
         if self.index["chunks"]:
             self.tfidf_retriever.fit(self.index["chunks"])
 
     def save_index(self):
+        """Write index to disk. Must be called while holding self._lock."""
         try:
             with open(self.index_file, "w", encoding="utf-8") as f:
                 json.dump(self.index, f, indent=2, ensure_ascii=False)
@@ -181,16 +194,16 @@ class RAGEngine:
         chunks = []
         start = 0
         text_len = len(text)
-        
+
         while start < text_len:
             end = min(start + chunk_size, text_len)
-            
+
             # If not at the end of the text, try to find a natural boundary
             if end < text_len:
                 # Look for paragraph or sentence boundaries within the last 20% of the chunk size
                 search_start = max(start, end - int(chunk_size * 0.25))
                 sub_text = text[search_start:end]
-                
+
                 # Check for paragraph break, then sentence ending, then word boundary
                 boundary = -1
                 for pattern in [r'\n\n', r'\n', r'\. ', r'\? ', r'\! ', r' ']:
@@ -198,25 +211,32 @@ class RAGEngine:
                     if matches:
                         boundary = search_start + matches[-1].end()
                         break
-                
+
                 if boundary != -1:
                     end = boundary
 
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
-                
+
             start = max(start + 1, end - overlap)
-            
+
         return chunks
 
-    def add_document(self, filename: str, content: str, doc_id: str, embedding_mode: str = "tfidf", api_key: Optional[str] = None) -> Dict[str, Any]:
+    def add_document(
+        self,
+        filename: str,
+        content: str,
+        doc_id: str,
+        embedding_mode: str = "tfidf",
+        api_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         # Split text into chunks
         raw_chunks = self.chunk_text(content)
-        
+
         # Initialize embedding engine
         engine = EmbeddingsEngine(mode=embedding_mode, api_key=api_key)
-        
+
         doc_chunks = []
         for idx, text in enumerate(raw_chunks):
             chunk_data = {
@@ -226,62 +246,71 @@ class RAGEngine:
                 "text": text,
                 "embedding": None
             }
-            
+
             # Generate embedding if using API-based retrieval
             if embedding_mode in ["openai", "huggingface"]:
                 embedding = engine.get_embedding(text)
                 if embedding:
                     chunk_data["embedding"] = embedding
-                    
+
             doc_chunks.append(chunk_data)
 
-        # Store document metadata
-        self.index["documents"][doc_id] = {
-            "filename": filename,
-            "chunk_count": len(doc_chunks),
-            "char_count": len(content),
-            "embedding_mode": embedding_mode
-        }
-        
-        # Append new chunks and save
-        self.index["chunks"].extend(doc_chunks)
-        self.save_index()
-        
-        # Refit TF-IDF retriever
-        self.tfidf_retriever.fit(self.index["chunks"])
-        
-        return self.index["documents"][doc_id]
+        with self._lock:
+            # Store document metadata
+            self.index["documents"][doc_id] = {
+                "filename": filename,
+                "chunk_count": len(doc_chunks),
+                "char_count": len(content),
+                "embedding_mode": embedding_mode
+            }
 
-    def delete_document(self, doc_id: str):
-        if doc_id in self.index["documents"]:
-            del self.index["documents"][doc_id]
-            # Filter out chunks for this document
-            self.index["chunks"] = [c for c in self.index["chunks"] if c["doc_id"] != doc_id]
+            # Append new chunks and save
+            self.index["chunks"].extend(doc_chunks)
             self.save_index()
+
             # Refit TF-IDF retriever
             self.tfidf_retriever.fit(self.index["chunks"])
-            return True
+
+            return self.index["documents"][doc_id]
+
+    def delete_document(self, doc_id: str) -> bool:
+        with self._lock:
+            if doc_id in self.index["documents"]:
+                del self.index["documents"][doc_id]
+                # Filter out chunks for this document
+                self.index["chunks"] = [c for c in self.index["chunks"] if c["doc_id"] != doc_id]
+                self.save_index()
+                # Refit TF-IDF retriever
+                self.tfidf_retriever.fit(self.index["chunks"])
+                return True
         return False
 
-    def retrieve(self, query: str, top_k: int = 4, embedding_mode: str = "tfidf", api_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 4,
+        embedding_mode: str = "tfidf",
+        api_key: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        # Read-only — no lock needed (Python GIL protects list reads)
         if not self.index["chunks"]:
             return []
-            
+
         # 1. Fallback to TF-IDF if requested or if no embedding floats exist
         has_embeddings = all(c.get("embedding") is not None for c in self.index["chunks"])
-        
+
         if embedding_mode == "tfidf" or not has_embeddings:
             return self.tfidf_retriever.retrieve(query, top_k=top_k)
-            
+
         # 2. Vector search using API embeddings
         engine = EmbeddingsEngine(mode=embedding_mode, api_key=api_key)
         query_embedding = engine.get_embedding(query)
-        
+
         if not query_embedding:
             # Fallback if API fails
-            print(f"Embedding API failed for query. Falling back to local TF-IDF.")
+            print("Embedding API failed for query. Falling back to local TF-IDF.")
             return self.tfidf_retriever.retrieve(query, top_k=top_k)
-            
+
         # Calculate cosine similarity
         scores = []
         for chunk in self.index["chunks"]:
@@ -290,9 +319,9 @@ class RAGEngine:
                 scores.append((chunk, sim))
             else:
                 scores.append((chunk, 0.0))
-                
+
         scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         results = []
         for chunk, sim in scores[:top_k]:
             res = chunk.copy()
@@ -301,7 +330,7 @@ class RAGEngine:
                 del res["embedding"]
             res["score"] = round(sim, 4)
             results.append(res)
-            
+
         return results
 
     def get_documents(self) -> Dict[str, Any]:

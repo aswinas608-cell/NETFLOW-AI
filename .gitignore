@@ -18,6 +18,7 @@ env/
 
 # Data directory (user-uploaded documents index — not committed)
 data/
+!data/.gitkeep
 
 # IDE
 .vscode/

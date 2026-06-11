@@ -1,3 +1,15 @@
+---
+title: RAG Chatbot
+emoji: 🤖
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+short_description: RAG chatbot powered by Groq with TF-IDF & embeddings.
+---
+
 # 🤖 RAG Chatbot — Powered by Groq
 
 A **Retrieval-Augmented Generation (RAG)** chatbot built with Python, FastAPI, and the Groq API. Upload your own documents and get fast, grounded answers with source citations — all in a beautiful dark-mode UI.
@@ -22,34 +34,22 @@ A **Retrieval-Augmented Generation (RAG)** chatbot built with Python, FastAPI, a
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Python 3.10+, FastAPI, Uvicorn |
+| **Backend** | Python 3.11, FastAPI, Uvicorn |
 | **LLM Inference** | Groq API |
 | **Retrieval** | TF-IDF (local) / HuggingFace / OpenAI |
 | **PDF Parsing** | pypdf |
 | **Frontend** | Vanilla HTML, CSS, JavaScript |
+| **Deployment** | Docker (Hugging Face Spaces) |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Using the App
 
-### 1. Clone the repo
-```bash
-git clone https://github.com/aswinas608-cell/RAG-CHATBOT.git
-cd RAG-CHATBOT
-```
+1. Enter your **Groq API Key** in the sidebar (get one free at [console.groq.com](https://console.groq.com))
+2. Upload a `.txt`, `.md`, or `.pdf` document
+3. Start chatting with your document!
 
-### 2. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Start the server
-```bash
-python -m uvicorn app:app --reload
-```
-
-### 4. Open in browser
-Navigate to: **http://127.0.0.1:8000**
+> **Note:** The document index is stored in-memory on Hugging Face Spaces. Uploaded documents will be cleared when the Space restarts.
 
 ---
 
@@ -71,11 +71,12 @@ RAG-CHATBOT/
 ├── app.py              # FastAPI backend (API endpoints)
 ├── rag_engine.py       # RAG core: chunking, indexing, retrieval
 ├── requirements.txt    # Python dependencies
+├── Dockerfile          # Docker build config for HF Spaces
 ├── static/
 │   ├── index.html      # Frontend UI
 │   ├── style.css       # Glassmorphism dark-mode styles
 │   └── app.js          # Frontend logic
-└── data/               # Auto-created: stores the document index (gitignored)
+└── data/               # Auto-created: stores the document index
 ```
 
 ---
@@ -90,6 +91,30 @@ RAG-CHATBOT/
 | `DELETE` | `/documents/{id}` | Remove a document |
 | `POST` | `/chat` | Query the RAG chatbot |
 | `POST` | `/validate` | Validate the Groq API key |
+
+---
+
+## 🏗️ Run Locally
+
+```bash
+git clone https://github.com/aswinas608-cell/RAG-CHATBOT.git
+cd RAG-CHATBOT
+pip install -r requirements.txt
+uvicorn app:app --reload
+```
+
+Then open: **http://127.0.0.1:8000**
+
+---
+
+## 🤗 Hugging Face Spaces Notes
+
+| Topic | Detail |
+|---|---|
+| **Storage** | Free-tier Spaces have no persistent disk. Uploaded documents are stored in `/tmp` and **reset on restart**. |
+| **File size** | Uploads are capped at **10 MB** per file. |
+| **Port** | The app binds to port `7860` as required by HF Spaces. |
+| **Index path** | Set the `RAG_INDEX_DIR` env var in Space Settings to change where the index is stored. |
 
 ---
 
