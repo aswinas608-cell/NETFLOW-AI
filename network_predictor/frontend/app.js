@@ -6,7 +6,9 @@
 // ────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ────────────────────────────────────────────────────────────────
-const API_BASE = 'http://localhost:8000';
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000'
+    ? 'http://localhost:8000'
+    : window.location.origin;
 
 const CHART_COLORS = {
     cyan:       'rgba(0, 212, 255, 1)',

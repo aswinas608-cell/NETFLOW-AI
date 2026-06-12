@@ -1,27 +1,34 @@
 FROM python:3.11-slim
 
-# ── Environment ────────────────────────────────────────────────────────────
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# ── Working directory ───────────────────────────────────────────────────────
+# Create user with UID 1000 to match HF Spaces runtime
+RUN useradd -m -u 1000 user
+USER user
+ENV PATH="/home/user/.local/bin:${PATH}"
+
 WORKDIR /app
 
-# ── Install dependencies (own layer — cached unless requirements.txt changes)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy requirements and install
+COPY --chown=user:user network_predictor/backend/requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# ── Copy application code ───────────────────────────────────────────────────
-COPY . .
+# Copy application files
+COPY --chown=user:user network_predictor/backend/ /app/backend/
+COPY --chown=user:user network_predictor/data/ /app/data/
+COPY --chown=user:user network_predictor/frontend/ /app/frontend/
+COPY --chown=user:user network_predictor/models/ /app/models/
 
-# ── Runtime directories ─────────────────────────────────────────────────────
-# /tmp is always writable on HF Spaces (free tier has no persistent disk)
-RUN mkdir -p /tmp/rag_data static
+# Set env variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8 \
+    MODEL_PATH=/app/models/traffic_lstm.pth
 
-# ── Hugging Face Spaces: port 7860 is required ──────────────────────────────
 EXPOSE 7860
 
-# ── Start server ────────────────────────────────────────────────────────────
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--timeout-keep-alive", "75"]
+# Start server
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]

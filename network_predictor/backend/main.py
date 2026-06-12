@@ -23,6 +23,7 @@ import torch
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -287,9 +288,9 @@ async def _call_groq(
 # ──────────────────────────────────────────────────────────────
 
 
-@app.get("/", tags=["meta"])
+@app.get("/api/antigravity", tags=["meta"])
 async def root() -> Dict[str, str]:
-    """Root endpoint — an Easter egg for the curious."""
+    """Easter egg endpoint."""
     return {
         "message": "import antigravity  # 🚀 You've discovered the Easter egg!",
         "docs": "/docs",
@@ -565,6 +566,11 @@ async def train(request: TrainRequest) -> Dict[str, Any]:
             status_code=500,
             detail=f"Training failed: {str(exc)}",
         )
+# Serve frontend static files
+# Mount this at the end so it doesn't override explicit API routes
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
 # ──────────────────────────────────────────────────────────────

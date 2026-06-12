@@ -1,123 +1,129 @@
 ---
-title: RAG Chatbot
-emoji: 🤖
-colorFrom: indigo
-colorTo: purple
+title: NetFlow AI
+emoji: 🌐
+colorFrom: cyan
+colorTo: violet
 sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: RAG chatbot powered by Groq with TF-IDF & embeddings.
+short_description: Industrial network traffic predictor and congestion forecaster using LSTM & Groq.
 ---
 
-# 🤖 RAG Chatbot — Powered by Groq
+# 🌐 NetFlow AI — Industrial Network Traffic Predictor
 
-A **Retrieval-Augmented Generation (RAG)** chatbot built with Python, FastAPI, and the Groq API. Upload your own documents and get fast, grounded answers with source citations — all in a beautiful dark-mode UI.
+> **Predictive Traffic Forecasting & Congestion Prediction** using LSTM neural networks + Groq-powered AI insights
+
+NetFlow AI is a full-stack application that forecasts industrial network traffic patterns and predicts congestion before it happens. It combines a PyTorch LSTM model for time-series prediction with Groq's lightning-fast LLM inference for generating actionable mitigation recommendations.
+
+Deployed on **Hugging Face Spaces** using Docker!
 
 ---
 
 ## ✨ Features
 
-- 🚀 **Ultra-fast inference** via [Groq API](https://groq.com) (Llama 3, Mixtral, Gemma 2)
-- 📄 **Document support** — Upload `.txt`, `.md`, and `.pdf` files
-- 🔍 **Flexible retrieval**:
-  - **Local TF-IDF** — works fully offline, no extra API keys needed
-  - **HuggingFace Embeddings** — free semantic search via HF Inference API
-  - **OpenAI Embeddings** — high-quality vector search
-- 📌 **Source citations** — every answer shows the exact retrieved chunks and relevance scores
-- 💾 **Persistent index** — documents survive server restarts (stored in `data/index.json`)
-- 🎨 **Premium UI** — glassmorphism dark-mode design with smooth animations
+- **LSTM Forecasting** — PyTorch-based deep learning model predicts bandwidth, packet counts, and latency
+- **Groq AI Insights** — Intelligent congestion analysis and mitigation recommendations via Groq LLM
+- **Real-Time Dashboard** — Stunning glassmorphism dark-mode UI with Chart.js visualizations
+- **Synthetic Data Generator** — Built-in tool to create realistic industrial traffic patterns
+- **Docker Ready** — One-command deployment with Docker Compose or Hugging Face Spaces
+- **RESTful API** — Clean FastAPI backend with interactive Swagger docs
+- **Demo Mode** — Works out-of-the-box without any trained model (random weights for demo)
+- **`import antigravity`** — Classic Python Easter egg 🚀
 
 ---
 
-## 🖼️ Tech Stack
+## 🏗️ Architecture
 
-| Layer | Technology |
-|---|---|
-| **Backend** | Python 3.11, FastAPI, Uvicorn |
-| **LLM Inference** | Groq API |
-| **Retrieval** | TF-IDF (local) / HuggingFace / OpenAI |
-| **PDF Parsing** | pypdf |
-| **Frontend** | Vanilla HTML, CSS, JavaScript |
-| **Deployment** | Docker (Hugging Face Spaces) |
-
----
-
-## 🚀 Using the App
-
-1. Enter your **Groq API Key** in the sidebar (get one free at [console.groq.com](https://console.groq.com))
-2. Upload a `.txt`, `.md`, or `.pdf` document
-3. Start chatting with your document!
-
-> **Note:** The document index is stored in-memory on Hugging Face Spaces. Uploaded documents will be cleared when the Space restarts.
-
----
-
-## ⚙️ Configuration
-
-All settings are configured directly in the UI sidebar:
-
-1. **Groq API Key** — Get yours free at [console.groq.com](https://console.groq.com)
-2. **LLM Model** — Choose from Llama 3.3 70B, Mixtral 8x7B, Gemma 2 9B, and more
-3. **Retrieval Mode** — Select TF-IDF (no key needed), HuggingFace, or OpenAI
-4. **Retrieved Chunks** — Control how many context chunks are retrieved per query (1–8)
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend Dashboard                     │
+│          (HTML + CSS + Chart.js Visualizations)           │
+└──────────────────────┬──────────────────────────────────┘
+                       │ HTTP/REST
+┌──────────────────────▼──────────────────────────────────┐
+│                   FastAPI Backend                         │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │  LSTM Model  │  │  Data Utils   │  │  Groq Client   │  │
+│  │  (PyTorch)   │  │  (Pandas)     │  │  (LLM API)     │  │
+│  └──────┬──────┘  └──────┬───────┘  └───────┬────────┘  │
+│         │                │                   │            │
+│    predictions     preprocessing       AI insights       │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 📁 Project Structure
 
 ```
-RAG-CHATBOT/
-├── app.py              # FastAPI backend (API endpoints)
-├── rag_engine.py       # RAG core: chunking, indexing, retrieval
-├── requirements.txt    # Python dependencies
-├── Dockerfile          # Docker build config for HF Spaces
-├── static/
-│   ├── index.html      # Frontend UI
-│   ├── style.css       # Glassmorphism dark-mode styles
-│   └── app.js          # Frontend logic
-└── data/               # Auto-created: stores the document index
+network_predictor/
+├── backend/
+│   ├── main.py              # FastAPI server + all API endpoints
+│   ├── model.py             # LSTM model definition (PyTorch)
+│   ├── data_utils.py        # Data processing & synthetic generation
+│   ├── requirements.txt     # Python dependencies
+│   ├── .env.example         # Environment variable template
+│   └── Dockerfile           # Backend container
+├── frontend/
+│   ├── index.html           # Dashboard UI
+│   ├── style.css            # Premium dark-mode glassmorphism styles
+│   └── app.js               # Chart.js visualizations + API integration
+├── data/
+│   ├── sample_traffic.csv   # Pre-generated synthetic dataset (500 rows)
+│   └── generate_data.py     # Data generation script
+├── models/                  # Saved trained model checkpoints
+│   └── .gitkeep
+├── docker-compose.yml       # Full-stack orchestration
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## 📡 API Endpoints
+## 🚀 Quick Start (Local Run)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Serve the frontend UI |
-| `GET` | `/documents` | List all indexed documents |
-| `POST` | `/upload` | Upload and index a document |
-| `DELETE` | `/documents/{id}` | Remove a document |
-| `POST` | `/chat` | Query the RAG chatbot |
-| `POST` | `/validate` | Validate the Groq API key |
+### Prerequisites
 
----
+- **Python 3.11+** with pip
+- **Free Groq API key** — Get one at [console.groq.com](https://console.groq.com) (optional, for AI insights)
 
-## 🏗️ Run Locally
+### Run via virtual environment
 
 ```bash
-git clone https://github.com/aswinas608-cell/RAG-CHATBOT.git
-cd RAG-CHATBOT
-pip install -r requirements.txt
-uvicorn app:app --reload
+cd network_predictor
+
+# Create virtual env
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install requirements
+pip install -r backend/requirements.txt
+
+# Start backend (serves frontend as well on port 8000!)
+python backend/main.py
 ```
 
-Then open: **http://127.0.0.1:8000**
+Then open **http://localhost:8000** in your browser.
 
 ---
 
-## 🤗 Hugging Face Spaces Notes
+## 📡 API Reference
 
-| Topic | Detail |
-|---|---|
-| **Storage** | Free-tier Spaces have no persistent disk. Uploaded documents are stored in `/tmp` and **reset on restart**. |
-| **File size** | Uploads are capped at **10 MB** per file. |
-| **Port** | The app binds to port `7860` as required by HF Spaces. |
-| **Index path** | Set the `RAG_INDEX_DIR` env var in Space Settings to change where the index is stored. |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Serves the frontend UI dashboard |
+| `GET` | `/api/antigravity` | Easter egg (`import antigravity` 🚀) |
+| `GET` | `/health` | Health check (model status, device info) |
+| `GET` | `/docs` | Interactive Swagger API documentation |
+| `GET` | `/api/sample-data` | Returns sample traffic CSV as JSON array |
+| `POST` | `/api/predict` | Run LSTM prediction on historical data |
+| `POST` | `/api/insights` | Get Groq-powered congestion analysis |
+| `POST` | `/api/forecast` | Combined predict + insights in one call |
+| `POST` | `/api/train` | Train/fine-tune the LSTM model |
 
 ---
 
 ## 📜 License
 
-MIT License — feel free to use, modify, and distribute.
+MIT License — see [LICENSE](LICENSE) for details.
